@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, TypeApplications, ScopedTypeVariables #-}
+{-# LANGUAGE OverloadedStrings, TypeApplications, ScopedTypeVariables, QuasiQuotes  #-}
 module Main (main) where
 
 import Data.ByteString (ByteString) 
@@ -6,7 +6,7 @@ import qualified Data.ByteString as BS
 
 import Data.Text (Text())
 import Data.Text.Encoding as E
-import Data.Text.Read (decimal, double, Reader())
+import Data.Text.Read (decimal, double)
 
 import System.UDev.Context
 import System.UDev.Device
@@ -19,7 +19,19 @@ import Data.Bits (testBit)
 import Control.Concurrent(threadDelay)
 import Control.Monad (unless, forever)
 
+import Control.Monad.Reader
+
 import Orientation (orientationFor)
+--import Units
+
+import Data.Metrology
+import Data.Metrology.SI
+
+import Data.Constants.Mechanics
+
+import Data.Metrology.Show ()
+
+type DeviceIO = ReaderT Device IO
 
 twos_complement :: Word16 -> Int
 twos_complement bits = if isNeg
@@ -30,12 +42,16 @@ twos_complement bits = if isNeg
   where
     isNeg = testBit bits 15
 
-getDimension :: Device -> ByteString -> IO Int
-getDimension dev name = parseInt <$> getAccelAttr dev (BS.append name "_raw")
+accelAttr :: ByteString -> Device -> IO ByteString
+accelAttr name dev = getSysattrValue dev (BS.append "in_accel_" name)
+
+getAccelAttr :: ByteString -> DeviceIO ByteString
+getAccelAttr name = ask >>= lift . accelAttr name
+
+getDimension :: ByteString -> DeviceIO Int
+getDimension name = parseInt <$> getAccelAttr (BS.append name "_raw")
 --getDimension dev v = getSysattrValue dev $ BS.concat ["in_accel_", v, "_raw"]
 
-getAccelAttr :: Device -> ByteString -> IO ByteString
-getAccelAttr dev name = getSysattrValue dev $ BS.append "in_accel_" name
 
 parseInt :: ByteString -> Int
 parseInt = twos_complement . fromReader . decimal . E.decodeUtf8
@@ -49,33 +65,53 @@ parseDouble = fromReader . double . E.decodeUtf8
 fromReader :: Either String (a, Text) -> a
 fromReader (Right (n, "")) = n
 
-main :: IO ()
-main = forever $ foo *> threadDelay 1000000
+--main :: IO ()
+--main = forever $ foo *> threadDelay 1000000
 
-g :: Double
-g = 9.8 -- m/s^2
+--g :: Double
+--g = 9.8 -- m/s^2
+
+scaledBy :: Double -> Int -> Acceleration
+scaledBy scale i = fromIntegral i *| (scale % [si| m/s^2 |])
 
 -- Just pick a number that you want to call close enough to laying flat that we should stop rotating the screen.
-closeEnoughToG :: Double
-closeEnoughToG = 0.3  -- m/s^2
+closeEnoughToG :: Acceleration
+closeEnoughToG = 0.3 % [si| m/s^2 |]
 
-foo :: IO ()
-foo = do
-  withUDev $ \ udev -> do
+getDev :: UDev -> IO Device
+getDev udev = do
     e <- newEnumerate udev
     addMatchSubsystem e "iio"
     addMatchSysattr e "name" (Just "accel_3d")
     scanDevices e
     Just ls <- getListEntry e
-    path  <- getName ls
-    dev <- newFromSysPath udev path
-    scale <- parseDouble <$> getAccelAttr dev "scale"
-    let scaled i = scale * fromIntegral i
+    path <- getName ls
+    newFromSysPath udev path
+
+scanAccelerometer :: Double -> DeviceIO ()
+scanAccelerometer scale = do
+    let scaled = scaledBy scale
+    z <- scaled <$> getDimension "z"
+    unless (gravity_g |+| z < closeEnoughToG) $ (liftIO . putStrLn) "PROCEEDING"
+    [x, y] <- traverse getDimension ["x", "y"]
+    liftIO $ putStrLn $ "X: " ++ show x
+    liftIO $ putStrLn $ "Y: " ++ show y
+    liftIO $ putStrLn $ "Z: " ++ show z
+    let angle = atan2 (fromIntegral y) (fromIntegral x)
+    liftIO $ print $ 180 / pi * angle
+    liftIO $ print $ orientationFor angle
+
+main :: IO ()
+main = do
+  withUDev $ \ udev -> do
+    dev <- getDev udev
+    scale <- parseDouble <$> accelAttr "scale" dev
+    forever $ do
+      runReaderT (scanAccelerometer scale) dev
+      threadDelay 1000000
+      
     --[x, y, z] <- traverse (fmap (twos_complement . parseNum) . getDimension dev) ["x", "y", "z"]
-    z <- scaled <$> getDimension dev "z"
     --if (g + z < closeEnoughToG) then putStrLn "flat" else putStrLn "proceeding"
-    unless (g + z < closeEnoughToG) $ putStrLn "PROCEEDING"
-    [x, y] <- traverse (getDimension dev) ["x", "y"]
     --print x
     --print $ bs2i v
     --let Right (tc,"") = decimal @Word16 $ E.decodeUtf8 x
@@ -85,9 +121,3 @@ foo = do
     --let xval :: Int = if (testBit x 15) then negate $ fromIntegral $ negate x else fromIntegral x
     --putStrLn "not the momma"
     --print xval
-    putStrLn $ "X: " ++ show x
-    putStrLn $ "Y: " ++ show y
-    putStrLn $ "Z: " ++ show z
-    let angle = atan2 (fromIntegral y) (fromIntegral x)
-    print $ 180 / pi * angle
-    print $ orientationFor angle
