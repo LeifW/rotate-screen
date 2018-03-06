@@ -35,12 +35,11 @@ display, touchscreen :: String
 display = "eDP1"
 touchscreen = "SYNA7813:00 06CB:1785"
 
-udevMain :: SysValue -> String -> String -> UdevIO ()
-udevMain iio_device_name touchscreen display = do
-    path <- getDevPath iio_device_name
-    scale <- runOnDevice path $ parseDouble <$> getAccelAttr "scale"
+udevMain ::  String -> String -> UdevIO ()
+udevMain touchscreen display = do
+    scale <- runOnDevice $ parseDouble <$> getAccelAttr "scale"
     forever $ do
-      GravityVector x y z <- runOnDevice path readOrientation
+      GravityVector x y z <- runOnDevice readOrientation
       unless (g + z * scale < closeEnoughToG) $ do
         printIO z
         let angle = atan2 y x
@@ -51,4 +50,4 @@ udevMain iio_device_name touchscreen display = do
       threadDelay 1000000
 
 main :: IO ()
-main = runWithUDev $ udevMain iio_device_name touchscreen display
+main = runWithUDev iio_device_name $ udevMain touchscreen display

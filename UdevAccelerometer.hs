@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 --module UdevAccelerometer where
-module UdevAccelerometer (SysValue(), GravityVector(GravityVector), UdevIO, DeviceIO, getDevPath, parseDouble, runOnDevice, runWithUDev, getAccelAttr, readOrientation )  where
+module UdevAccelerometer (SysValue(), GravityVector(GravityVector), UdevIO, DeviceIO, parseDouble, runOnDevice, runWithUDev, getAccelAttr, readOrientation )  where
 
 import Data.ByteString (ByteString) 
 import qualified Data.ByteString as BS
@@ -21,8 +21,13 @@ import Data.Bits (testBit)
 
 import Control.Monad.Reader
 
+data UDevDevice = UDevDevice {
+  _udev :: UDev,
+  _devicePath :: RawFilePath
+}
+
 type DeviceIO = ReaderT Device IO
-type UdevIO = ReaderT UDev IO
+type UdevIO = ReaderT UDevDevice IO
 
 twos_complement :: Word16 -> Int
 twos_complement bits = if isNeg
@@ -63,11 +68,11 @@ parseDouble = fromReader . double . E.decodeUtf8
 fromReader :: Either String (a, Text) -> a
 fromReader (Right (n, "")) = n
 
-getDevPath:: SysValue -> UdevIO RawFilePath
-getDevPath devName = ask >>= lift . devPath devName
+--getDevPath:: SysValue -> UdevIO RawFilePath
+--getDevPath devName = ask >>= lift . devPath devName . _udev
 
-devPath :: SysValue -> UDev -> IO RawFilePath
-devPath devName udev = do
+getDevPath :: UDev -> SysValue -> IO RawFilePath
+getDevPath udev devName = do
     e <- newEnumerate udev
     addMatchSubsystem e "iio"
     addMatchSysattr e "name" (Just devName)
@@ -83,13 +88,17 @@ readOrientation = do
     [x, y, z] <- traverse getDimension ["x", "y", "z"]
     pure $ GravityVector x y z
 
-getDeviceFromPath :: RawFilePath -> UdevIO Device
-getDeviceFromPath path = ask >>= lift . flip newFromSysPath path
+getDevice :: UdevIO Device
+getDevice = do
+  UDevDevice udev path <- ask
+  lift $ newFromSysPath udev path
 
-runOnDevice :: RawFilePath -> DeviceIO a -> UdevIO a
-runOnDevice path f = do
-    dev <- getDeviceFromPath path
+runOnDevice :: DeviceIO a -> UdevIO a
+runOnDevice f = do
+    dev <- getDevice
     liftIO $ runReaderT f dev
 
-runWithUDev :: UdevIO a -> IO a
-runWithUDev f = withUDev $ runReaderT f
+runWithUDev :: SysValue -> UdevIO a -> IO a
+runWithUDev devName f = withUDev $ \udev -> do
+  path <- getDevPath udev devName
+  runReaderT f $ UDevDevice udev path
