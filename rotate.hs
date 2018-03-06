@@ -40,8 +40,8 @@ udevMain iio_device_name touchscreen display = do
     path <- getDevPath iio_device_name
     scale <- runOnDevice path $ parseDouble <$> getAccelAttr "scale"
     forever $ do
-      GravityVector x y z <- fmap (scale *) <$> runOnDevice path readOrientation
-      unless (g + z < closeEnoughToG) $ do
+      GravityVector x y z <- runOnDevice path readOrientation
+      unless (g + z * scale < closeEnoughToG) $ do
         printIO z
         let angle = atan2 y x
         printIO $ 180.0 / pi * angle

@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, DeriveFunctor #-}
+{-# LANGUAGE OverloadedStrings #-}
 --module UdevAccelerometer where
 module UdevAccelerometer (SysValue(), GravityVector(GravityVector), UdevIO, DeviceIO, getDevPath, parseDouble, runOnDevice, runWithUDev, getAccelAttr, readOrientation )  where
 
@@ -33,11 +33,11 @@ twos_complement bits = if isNeg
   where
     isNeg = testBit bits 15
 
-data GravityVector a = GravityVector {
-  _x :: a,
-  _y :: a,
-  _z :: a
-} deriving (Show, Functor)
+data GravityVector = GravityVector {
+  _x :: Double,
+  _y :: Double,
+  _z :: Double
+} deriving Show
 
 accelAttr :: ByteString -> Device -> IO ByteString
 accelAttr name dev = getSysattrValue dev (BS.append "in_accel_" name)
@@ -75,7 +75,7 @@ devPath devName udev = do
     Just ls <- getListEntry e --partial
     getName ls
     
-readOrientation :: DeviceIO (GravityVector Double)
+readOrientation :: DeviceIO GravityVector
 readOrientation = do
     --x <- getDimension "x"
     --y <- getDimension "y"
