@@ -9,23 +9,15 @@ import Control.Monad.IO.Class (MonadIO(), liftIO)
 import Orientation (orientationFor, orientationToArg)
 import UdevAccelerometer
 
-import Data.Metrology
-import Data.Metrology.SI
-
-import Data.Constants.Mechanics (gravity_g)
-
-import Data.Metrology.Show ()
-
 import System.Process.Typed (runProcess_, proc)
 import System.FilePath ((</>))
 
-scaledBy :: Double -> Double -> Acceleration
-scaledBy scale i = i *| (scale % [si| m/s^2 |])
-
+g :: Double -- m/s^2
+g = 9.8
 -- Just pick a number that you want to call close enough to laying flat that we should stop rotating the screen.
 -- Tolerance
-closeEnoughToG :: Acceleration
-closeEnoughToG = 0.4 % [si| m/s^2 |]
+closeEnoughToG :: Double -- m/s^2
+closeEnoughToG = 0.4
 
 iio_device_name = "accel_3d"
 
@@ -47,13 +39,11 @@ udevMain :: SysValue -> String -> String -> UdevIO ()
 udevMain iio_device_name touchscreen display = do
     path <- getDevPath iio_device_name
     scale <- runOnDevice path $ parseDouble <$> getAccelAttr "scale"
-    let scaled = scaledBy scale
     forever $ do
-      GravityVector x y z <- fmap scaled <$> runOnDevice path readOrientation
-      unless (gravity_g |+| z < closeEnoughToG) $ do
+      GravityVector x y z <- fmap (scale *) <$> runOnDevice path readOrientation
+      unless (g + z < closeEnoughToG) $ do
         printIO z
-        --let angle = atan2 y x
-        let angle = atan $ y |/| x # Number
+        let angle = atan2 y x
         printIO $ 180.0 / pi * angle
         printIO $ orientationToArg $ orientationFor angle
         xrandr ["-o", orientationToArg $ orientationFor angle]
