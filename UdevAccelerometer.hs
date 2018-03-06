@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings, DeriveFunctor #-}
-module UdevAccelerometer where
+--module UdevAccelerometer where
+module UdevAccelerometer (SysValue(), GravityVector(GravityVector), UdevIO, DeviceIO, getDevPath, parseDouble, runOnDevice, runWithUDev, getAccelAttr, readOrientation )  where
 
 import Data.ByteString (ByteString) 
 import qualified Data.ByteString as BS
