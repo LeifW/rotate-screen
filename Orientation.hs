@@ -1,6 +1,6 @@
 {-# LANGUAGE MultiParamTypeClasses, FlexibleInstances #-}
 
-module Orientation (orientationFor) where
+module Orientation (orientationFor, orientationToArg, Orientation) where
 
 import qualified Data.IntervalMap.Generic.Strict as IM
 
@@ -11,11 +11,17 @@ instance Ord e => IM.Interval (e,e) e where
 
 data Orientation = Portrait | Landscape | FlippedPortrait | FlippedLandscape deriving (Show, Eq)
 
-type OrientationMap = IM.IntervalMap (Double,Double) Orientation
+-- To xrandr arg
+orientationToArg :: Orientation -> String
+orientationToArg Landscape        = "normal"
+orientationToArg Portrait         = "left"
+orientationToArg FlippedPortrait  = "right"
+orientationToArg FlippedLandscape = "inverted"
 
-(|=>) :: v -> v -> (v, v)
-b |=> e = (b, e)
 
+type OrientationMap = IM.IntervalMap (Double, Double) Orientation
+
+-- 1/4 pi radians == 45 degrees
 ranges :: OrientationMap
 ranges = IM.fromList $
   ((      -pi, -3/4 * pi), FlippedPortrait) :
@@ -26,7 +32,11 @@ ranges = IM.fromList $
   []
   where epsilon = 0.01 -- because the upper bound is non-inclusive; want to include the case where the angle = 180 degrees.
 
-orientationFor :: Double -> Orientation
-orientationFor angle = case IM.toList $ IM.containing ranges angle of
+-- angle of rotation from having left edge of screen on bottom, in radians -> [portrait, landscape, inverted portrait, inverted landscape]
+-- (the angle the gravity vector is pointing, in degrees from the x-axis)
+--orientationFor :: Double -> Orientation
+orientationFor :: Double -- ^ The angle the gravity vector is pointing, in degrees from the x-axis.
+               -> Orientation
+orientationFor θ = case IM.toList $ IM.containing ranges θ of
   [(_, o)] -> o 
-  otherwise -> error $ "No unique range found for angle " ++ show angle ++ ": " ++ show otherwise
+  other-> error $ "No unique range found for angle " ++ show θ ++ ": " ++ show other

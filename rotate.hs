@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, TypeApplications, ScopedTypeVariables, QuasiQuotes  #-}
-module Main (main) where
+module Main where
 
 import Data.ByteString (ByteString) 
 import qualified Data.ByteString as BS
@@ -13,15 +13,20 @@ import System.UDev.Device
 import System.UDev.Enumerate
 import System.UDev.List
 
+import System.Posix.ByteString.FilePath (RawFilePath())
+
 import Data.Word (Word16())
 import Data.Bits (testBit)
 
 import Control.Concurrent(threadDelay)
 import Control.Monad (unless, forever)
 
+import Control.Applicative (liftA2)
+import Data.Function (on)
+
 import Control.Monad.Reader
 
-import Orientation (orientationFor)
+import Orientation (orientationFor, orientationToArg)
 --import Units
 
 import Data.Metrology
@@ -30,6 +35,9 @@ import Data.Metrology.SI
 import Data.Constants.Mechanics
 
 import Data.Metrology.Show ()
+
+import System.Process.Typed (runProcess_, proc)
+import System.FilePath ((</>))
 
 type DeviceIO = ReaderT Device IO
 
@@ -48,8 +56,9 @@ accelAttr name dev = getSysattrValue dev (BS.append "in_accel_" name)
 getAccelAttr :: ByteString -> DeviceIO ByteString
 getAccelAttr name = ask >>= lift . accelAttr name
 
-getDimension :: ByteString -> DeviceIO Int
-getDimension name = parseInt <$> getAccelAttr (BS.append name "_raw")
+-- Everything that consumes these wants a Double, so I'll go ahead and convert the Int to a Double in here.
+getDimension :: ByteString -> DeviceIO Double
+getDimension name = (fromIntegral . parseInt) <$> getAccelAttr (BS.append name "_raw")
 --getDimension dev v = getSysattrValue dev $ BS.concat ["in_accel_", v, "_raw"]
 
 
@@ -62,6 +71,7 @@ parseDouble = fromReader . double . E.decodeUtf8
 --parseInt bs = n
 --  where Right (n, "") = decimal $ E.decodeUtf8 bs
 
+--partial
 fromReader :: Either String (a, Text) -> a
 fromReader (Right (n, "")) = n
 
@@ -71,43 +81,82 @@ fromReader (Right (n, "")) = n
 --g :: Double
 --g = 9.8 -- m/s^2
 
-scaledBy :: Double -> Int -> Acceleration
-scaledBy scale i = fromIntegral i *| (scale % [si| m/s^2 |])
+scaledBy :: Double -> Double -> Acceleration
+scaledBy scale i = i *| (scale % [si| m/s^2 |])
 
 -- Just pick a number that you want to call close enough to laying flat that we should stop rotating the screen.
+-- Tolerance
 closeEnoughToG :: Acceleration
-closeEnoughToG = 0.3 % [si| m/s^2 |]
+closeEnoughToG = 0.4 % [si| m/s^2 |]
 
-getDev :: UDev -> IO Device
-getDev udev = do
+getDevPath :: UDev -> IO RawFilePath
+getDevPath udev = do
     e <- newEnumerate udev
     addMatchSubsystem e "iio"
     addMatchSysattr e "name" (Just "accel_3d")
     scanDevices e
     Just ls <- getListEntry e
-    path <- getName ls
-    newFromSysPath udev path
+    getName ls
+    
 
-scanAccelerometer :: Double -> DeviceIO ()
-scanAccelerometer scale = do
+--(a1 -> a1 -> c) -> (a2 -> f a1) -> a2 -> a2 -> f c
+onA :: Applicative f => (a -> a -> c) -> (b -> f a) -> b -> b -> f c
+onA = on . liftA2
+
+printIO :: (MonadIO m, Show s) => s -> m () 
+printIO = liftIO . print
+
+{-
+scanAccelerometer :: Double -> RawFilePath -> IO ()
+scanAccelerometer scale path = do
+  device <- newFromSysPath udev path
+  runReaderT (scanAccelerometer scale) dev
+-}
+
+run :: MonadIO m => FilePath -> [String] -> m ()
+run cmd args = runProcess_ $ proc ("/usr/bin" </> cmd) args
+
+xrandr, xinput :: MonadIO m => [String] -> m ()
+xrandr = run "xrandr"
+xinput = run "xinput"
+
+display, touchscreen :: String
+display = "eDP1"
+touchscreen = "SYNA7813:00 06CB:1785"
+
+readOrientation :: Double -> DeviceIO ()
+readOrientation scale = do
     let scaled = scaledBy scale
     z <- scaled <$> getDimension "z"
-    unless (gravity_g |+| z < closeEnoughToG) $ (liftIO . putStrLn) "PROCEEDING"
-    [x, y] <- traverse getDimension ["x", "y"]
+    printIO z
+    unless (gravity_g |+| z < closeEnoughToG) $ do
+      --angle <- onA atan2 getDimension "y" "x"
+      angle <- atan2 <$> getDimension "y" <*> getDimension "x"
+      printIO $ 180.0 / pi * angle
+      printIO $ orientationToArg $ orientationFor angle
+      xrandr ["-o", orientationToArg $ orientationFor angle]
+      xinput ["map-to-output", touchscreen, display]
+--(liftIO . putStrLn) "PROCEEDING"
+    --[x, y] <- traverse getDimension ["x", "y"]
+ {-
     liftIO $ putStrLn $ "X: " ++ show x
     liftIO $ putStrLn $ "Y: " ++ show y
     liftIO $ putStrLn $ "Z: " ++ show z
-    let angle = atan2 (fromIntegral y) (fromIntegral x)
+    --let angle = atan2 y x
     liftIO $ print $ 180 / pi * angle
     liftIO $ print $ orientationFor angle
+-}
 
 main :: IO ()
 main = do
   withUDev $ \ udev -> do
-    dev <- getDev udev
+    path <- getDevPath udev
+    dev <- newFromSysPath udev path
     scale <- parseDouble <$> accelAttr "scale" dev
     forever $ do
-      runReaderT (scanAccelerometer scale) dev
+      dev <- newFromSysPath udev path -- have to do this in the loop; values are static once device is created, despite getSysattrValue operating in IO
+      -- I blame C.
+      runReaderT (readOrientation scale) dev
       threadDelay 1000000
       
     --[x, y, z] <- traverse (fmap (twos_complement . parseNum) . getDimension dev) ["x", "y", "z"]
