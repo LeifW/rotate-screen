@@ -70,7 +70,7 @@ getDevPath udev devName = do
     addMatchSubsystem e "iio"
     addMatchSysattr e "name" (Just devName)
     scanDevices e
-    Just ls <- getListEntry e --partial
+    ls <- getListEntry e --partial
     getName ls
     
 readOrientation :: DeviceIO GravityVector
