@@ -1,6 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
---module UdevAccelerometer where
-module UdevAccelerometer (SysValue(), GravityVector(GravityVector), UdevIO, DeviceIO, parseDouble, runOnDevice, runWithUDev, getAccelAttr, readOrientation )  where
+module UdevAccelerometer (SysValue(), GravityVector(GravityVector), UdevIO, DeviceIO, parseDouble, runOnDevice, runWithUDevDevice, getAccelAttr, readOrientation )  where
 
 import Data.ByteString (ByteString) 
 import qualified Data.ByteString as BS
@@ -61,15 +60,9 @@ parseInt = twos_complement . fromReader . decimal . E.decodeUtf8
 parseDouble :: ByteString -> Double
 parseDouble = fromReader . double . E.decodeUtf8
 
---parseInt bs = n
---  where Right (n, "") = decimal $ E.decodeUtf8 bs
-
 --partial
 fromReader :: Either String (a, Text) -> a
 fromReader (Right (n, "")) = n
-
---getDevPath:: SysValue -> UdevIO RawFilePath
---getDevPath devName = ask >>= lift . devPath devName . _udev
 
 getDevPath :: UDev -> SysValue -> IO RawFilePath
 getDevPath udev devName = do
@@ -82,9 +75,6 @@ getDevPath udev devName = do
     
 readOrientation :: DeviceIO GravityVector
 readOrientation = do
-    --x <- getDimension "x"
-    --y <- getDimension "y"
-    --z <- getDimension "z"
     [x, y, z] <- traverse getDimension ["x", "y", "z"]
     pure $ GravityVector x y z
 
@@ -98,7 +88,7 @@ runOnDevice f = do
     dev <- getDevice
     liftIO $ runReaderT f dev
 
-runWithUDev :: SysValue -> UdevIO a -> IO a
-runWithUDev devName f = withUDev $ \udev -> do
+runWithUDevDevice :: SysValue -> UdevIO a -> IO a
+runWithUDevDevice devName f = withUDev $ \udev -> do
   path <- getDevPath udev devName
   runReaderT f $ UDevDevice udev path

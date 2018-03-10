@@ -39,9 +39,10 @@ udevMain ::  String -> String -> UdevIO ()
 udevMain touchscreen display = do
     scale <- runOnDevice $ parseDouble <$> getAccelAttr "scale"
     forever $ do
+      -- newFromSysPath needs to be called every time to get the current value, which is what runOnDevice ultimately does
       GravityVector x y z <- runOnDevice readOrientation
+      printIO $ z * scale
       unless (g + z * scale < closeEnoughToG) $ do
-        printIO z
         let angle = atan2 y x
         printIO $ 180.0 / pi * angle
         printIO $ orientationToArg $ orientationFor angle
@@ -50,4 +51,4 @@ udevMain touchscreen display = do
       threadDelay 1000000
 
 main :: IO ()
-main = runWithUDev iio_device_name $ udevMain touchscreen display
+main = runWithUDevDevice iio_device_name $ udevMain touchscreen display
