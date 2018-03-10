@@ -6,6 +6,7 @@ ghc:
   - 8.2
 
 install:
+  - cabal install transformers-compat-0.5.1.4
   - cabal install --only-dependencies
 
 script:
