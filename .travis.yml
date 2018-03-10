@@ -10,7 +10,7 @@ install:
   # sudo apt-get -qq update
   - sudo apt-get install -y libudev-dev
     #- cabal install monad-control
-  - cabal install lifted-base
+    #- cabal install lifted-base
   - cabal install --only-dependencies
 
 script:
