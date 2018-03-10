@@ -9,7 +9,8 @@ install:
   #- cabal install transformers-compat-0.5.1.4
   # sudo apt-get -qq update
   - sudo apt-get install -y libudev-dev
-  - cabal install monad-control
+    #- cabal install monad-control
+  - cabal install lifted-base
   - cabal install --only-dependencies
 
 script:
