@@ -1,12 +1,15 @@
 language: haskell
 
 ghc:
-  - 7.8
-  - 8.0
+  #  - 7.8
+  # - 8.0
   - 8.2
 
 install:
-  - cabal install transformers-compat-0.5.1.4
+  #- cabal install transformers-compat-0.5.1.4
+  # sudo apt-get -qq update
+  - sudo apt-get install -y libudev-dev
+  - cabal install monad-control
   - cabal install --only-dependencies
 
 script:
