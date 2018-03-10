@@ -1,4 +1,4 @@
-{-# LANGUAGE OverloadedStrings, QuasiQuotes #-}
+{-# LANGUAGE OverloadedStrings #-}
 module Main where
 
 import Control.Concurrent.Lifted (threadDelay)
